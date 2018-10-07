@@ -9,7 +9,11 @@ import PropTypes from 'prop-types';
 import XDate from 'xdate';
 
 import dateutils from '../../dateutils';
+import {parseDate} from '../../interface';
+
 import styleConstructor from './style';
+
+const SCROLL_THRESHOLD = 5;
 
 class ReactComp extends Component {
   static propTypes = {
@@ -35,41 +39,21 @@ class ReactComp extends Component {
     refreshControl: PropTypes.element,
     refreshing: PropTypes.bool,
     onRefresh: PropTypes.func,
+    contentInset: PropTypes.object,
   };
+
+  state = {
+    reservations: [],
+  }
 
   constructor(props) {
     super(props);
     this.styles = styleConstructor(props.theme);
-    this.state = {
-      reservations: []
-    };
-    this.heights=[];
-    this.selectedDay = this.props.selectedDay;
-    this.scrollOver = true;
-  }
-
-  componentWillMount() {
-    this.updateDataSource(this.getReservations(this.props).reservations);
-  }
-
-  updateDataSource(reservations) {
-    this.setState({
-      reservations
-    });
-  }
-
-  updateReservations(props) {
-    const reservations = this.getReservations(props);
-    if (this.list && !dateutils.sameDate(props.selectedDay, this.selectedDay)) {
-      let scrollPosition = 0;
-      for (let i = 0; i < reservations.scrollPosition; i++) {
-        scrollPosition += this.heights[i] || 0;
-      }
-      this.scrollOver = false;
-      this.list.scrollToOffset({offset: scrollPosition, animated: true});
-    }
+    this.heights = [];
     this.selectedDay = props.selectedDay;
-    this.updateDataSource(reservations.reservations);
+    this.scrollOver = true;
+
+    this.state.reservations = this.getReservations(props).reservations;
   }
 
   componentWillReceiveProps(props) {
@@ -84,44 +68,39 @@ class ReactComp extends Component {
     }
   }
 
-  onScroll(event) {
-    const yOffset = event.nativeEvent.contentOffset.y;
-    this.props.onScroll(yOffset);
-    let topRowOffset = 0;
-    let topRow;
-    for (topRow = 0; topRow < this.heights.length; topRow++) {
-      if (topRowOffset + this.heights[topRow] / 2 >= yOffset) {
-        break;
+  updateReservations(props) {
+    const {reservations, scrollPosition} = this.getReservations(props);
+    if (this.list && !dateutils.sameDate(props.selectedDay, this.selectedDay)
+    ) {
+      let offset = 0;
+      for (let i = 0; i < scrollPosition; i++) {
+        offset += this.heights[i] || 0;
       }
-      topRowOffset += this.heights[topRow];
+      this.scrollOver = false;
+      this.list.scrollToOffset({offset, animated: Boolean(this.selectedDay)});
     }
-    const row = this.state.reservations[topRow];
-    if (!row) return;
-    const day = row.day;
-    const sameDate = dateutils.sameDate(day, this.selectedDay);
-    if (!sameDate && this.scrollOver) {
-      this.selectedDay = day.clone();
-      this.props.onDayChange(day.clone());
-    }
+    this.selectedDay = props.selectedDay;
+    this.setState({reservations});
   }
 
-  onRowLayoutChange(ind, event) {
-    this.heights[ind] = event.nativeEvent.layout.height;
-  }
+  getReservations(props) {
+    if (!props.reservations || !props.selectedDay) {
+      return {reservations: [], scrollPosition: 0};
+    }
 
-  renderRow({item, index}) {
-    return (
-      <View onLayout={this.onRowLayoutChange.bind(this, index)}>
-        <Reservation
-          item={item}
-          renderItem={this.props.renderItem}
-          renderDay={this.props.renderDay}
-          renderEmptyDate={this.props.renderEmptyDate}
-          theme={this.props.theme}
-          rowHasChanged={this.props.rowHasChanged}
-        />
-      </View>
-    );
+    const keys = Object.keys(props.reservations);
+    const iterator = parseDate(keys[0]).clone();
+    const lastIterator = parseDate(keys[keys.length - 1]).clone();
+
+    let reservations = [];
+    while (iterator.getTime() <= lastIterator) {
+      const res = this.getReservationsForDay(iterator, props);
+      reservations = reservations.concat(res);
+      iterator.addDays(1);
+    }
+
+    const scrollPosition = this.calculateScrollPosition(reservations, props.selectedDay);
+    return {reservations, scrollPosition};
   }
 
   getReservationsForDay(iterator, props) {
@@ -145,39 +124,88 @@ class ReactComp extends Component {
     }
   }
 
+  scrollToInitialPosition() {
+    const scrollPosition = this.calculateScrollPosition(this.state.reservations, this.props.selectedDay);
+    let offset = 0;
+    for (let i = 0; i < scrollPosition; i++) {
+      offset += this.heights[i] || 0;
+    }
+    this.scrollOver = false;
+    this.list.scrollToOffset({offset, animated: false});
+    this.setState({setInitialPosition: true});
+  }
+
+  calculateScrollPosition(reservations, selectedDay) {
+    let scrollPosition = 0;
+    for (reservation of reservations) {
+      if (JSON.stringify(selectedDay[0]) === JSON.stringify(reservation.date[0])) {
+        break;
+      }
+      scrollPosition++;
+    }
+    return scrollPosition;
+  }
+
+  onScroll(event) {
+    const yOffset = event.nativeEvent.contentOffset.y;
+    this.props.onScroll(yOffset);
+    let topRowOffset = 0;
+    let topRow;
+    const numberOfRows = this.heights.length;
+    for (topRow = 0; topRow < numberOfRows; topRow++) {
+      if (topRowOffset + this.heights[topRow] / 2 >= yOffset) {
+        break;
+      }
+      topRowOffset += this.heights[topRow];
+    }
+
+    const row = this.state.reservations[topRow];
+    if (!row) return;
+    const day = row.day;
+    const sameDate = dateutils.sameDate(day, this.selectedDay);
+    if (!sameDate && this.scrollOver) {
+      this.selectedDay = day.clone();
+      this.props.onDayChange(day.clone());
+    }
+
+    if (this.props.onScrollThresholdReached) {
+      if (topRow - SCROLL_THRESHOLD === 0) {
+        const {reservations} = this.state;
+        this.props.onScrollThresholdReached(reservations[0].day.toDateString(), 'top');
+      } else if (topRow + SCROLL_THRESHOLD === numberOfRows) {
+        const {reservations} = this.state;
+        this.props.onScrollThresholdReached(reservations[reservations.length - 1].day.toDateString(), 'bottom');
+      }
+    }
+  }
+
+  onRowLayoutChange(ind, event) {
+    this.heights[ind] = event.nativeEvent.layout.height;
+
+    if (!this.state.setInitialPosition
+      && Object.keys(this.heights).length > this.state.reservations.length / 2
+    ) {
+      this.scrollToInitialPosition();
+    }
+  }
+
   onListTouch() {
     this.scrollOver = true;
   }
 
-  getReservations(props) {
-    if (!props.reservations || !props.selectedDay) {
-      return {reservations: [], scrollPosition: 0};
-    }
-    let reservations = [];
-    if (this.state.reservations && this.state.reservations.length) {
-      const iterator = this.state.reservations[0].day.clone();
-      while (iterator.getTime() < props.selectedDay.getTime()) {
-        const res = this.getReservationsForDay(iterator, props);
-        if (!res) {
-          reservations = [];
-          break;
-        } else {
-          reservations = reservations.concat(res);
-        }
-        iterator.addDays(1);
-      }
-    }
-    const scrollPosition = reservations.length;
-    const iterator = props.selectedDay.clone();
-    for (let i = 0; i < 31; i++) {
-      const res = this.getReservationsForDay(iterator, props);
-      if (res) {
-        reservations = reservations.concat(res);
-      }
-      iterator.addDays(1);
-    }
-
-    return {reservations, scrollPosition};
+  renderRow({item, index}) {
+    return (
+      <View onLayout={this.onRowLayoutChange.bind(this, index)}>
+        <Reservation
+          item={item}
+          renderItem={this.props.renderItem}
+          renderDay={this.props.renderDay}
+          renderEmptyDate={this.props.renderEmptyDate}
+          theme={this.props.theme}
+          rowHasChanged={this.props.rowHasChanged}
+        />
+      </View>
+    );
   }
 
   render() {
@@ -185,16 +213,22 @@ class ReactComp extends Component {
       if (this.props.renderEmptyData) {
         return this.props.renderEmptyData();
       }
-      return (<ActivityIndicator style={{marginTop: 80}}/>);
+      return (<ActivityIndicator style={{marginTop: 80}} />);
     }
+
+    const opacity = this.state.setInitialPosition ? 1 : !this.props.earliestDay ? 1 : 0;
+
+    const numToRender = this.state.reservations.length === 1 ? 1 : Math.floor(this.state.reservations.length / 2);
+
     return (
       <FlatList
         ref={(c) => this.list = c}
-        style={this.props.style}
+        style={{...this.props.style, opacity}}
         contentContainerStyle={this.styles.content}
         renderItem={this.renderRow.bind(this)}
         data={this.state.reservations}
         onScroll={this.onScroll.bind(this)}
+        initialNumToRender={numToRender}
         showsVerticalScrollIndicator={false}
         scrollEventThrottle={200}
         onMoveShouldSetResponderCapture={() => {this.onListTouch(); return false;}}
@@ -202,6 +236,7 @@ class ReactComp extends Component {
         refreshControl={this.props.refreshControl}
         refreshing={this.props.refreshing || false}
         onRefresh={this.props.onRefresh}
+        contentInset={this.props.contentInset}
       />
     );
   }
