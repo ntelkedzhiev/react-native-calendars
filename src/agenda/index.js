@@ -36,6 +36,10 @@ export default class AgendaView extends Component {
     theme: PropTypes.object,
     /** agenda container style */
     style: viewPropTypes.style,
+
+    /** content inset */
+    contentInset: PropTypes.object,
+
     /** the list of items that have to be displayed in agenda. If you want to render item as empty date
     the value of date key has to be an empty array []. If there exists no value for date key it is
     considered that the date in question is not yet loaded */
@@ -66,6 +70,10 @@ export default class AgendaView extends Component {
     futureScrollRange: PropTypes.number,
     /** initially selected day */
     selected: PropTypes.any,
+    // Earliest possible day
+    earliestDay: PropTypes.any,
+    // Latest possible day
+    latestDay: PropTypes.any,
     /** Minimum date that can be selected, dates before minDate will be grayed out. Default = undefined */
     minDate: PropTypes.any,
     /** Maximum date that can be selected, dates after maxDate will be grayed out. Default = undefined */
@@ -114,6 +122,8 @@ export default class AgendaView extends Component {
       calendarIsReady: false,
       calendarScrollable: false,
       firstResevationLoad: false,
+      earliestDay: parseDate(this.props.earliestDay) || XDate(true),
+      latestDay: parseDate(this.props.latestDay) || XDate(true),
       selectedDay: parseDate(this.props.selected) || XDate(true),
       topDay: parseDate(this.props.selected) || XDate(true)
     };
@@ -178,6 +188,8 @@ export default class AgendaView extends Component {
   onLayout(event) {
     this.viewHeight = event.nativeEvent.layout.height;
     this.viewWidth = event.nativeEvent.layout.width;
+    // Fix: https://github.com/wix/react-native-calendars/pull/486/files
+    this.calendar.scrollToDay(this.state.selectedDay.clone(), this.calendarOffset(), false);
     this.forceUpdate();
   }
 
@@ -316,12 +328,15 @@ export default class AgendaView extends Component {
         renderEmptyDate={this.props.renderEmptyDate}
         reservations={this.props.items}
         selectedDay={this.state.selectedDay}
+        earliestDay={this.state.earliestDay}
+        latestDay={this.state.latestDay}
         renderEmptyData={this.props.renderEmptyData}
         topDay={this.state.topDay}
         onDayChange={this.onDayChange.bind(this)}
         onScroll={() => { }}
         ref={(c) => this.list = c}
         theme={this.props.theme}
+        contentInset={this.props.contentInset}
       />
     );
   }
@@ -410,10 +425,10 @@ export default class AgendaView extends Component {
       left: (this.viewWidth - 80) / 2
     };
 
-    let knob = (<View style={this.styles.knobContainer}/>);
+    let knob = (<View style={this.styles.knobContainer} />);
 
     if (!this.props.hideKnob) {
-      const knobView = this.props.renderKnob ? this.props.renderKnob() : (<View style={this.styles.knob}/>);
+      const knobView = this.props.renderKnob ? this.props.renderKnob() : (<View style={this.styles.knob} />);
       knob = this.state.calendarScrollable ? null : (
         <View style={this.styles.knobContainer}>
           <View ref={(c) => this.knob = c}>{knobView}</View>
