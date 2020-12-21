@@ -39,7 +39,8 @@ class ReservationList extends Component {
     onScrollEndDrag: PropTypes.func,
     onMomentumScrollBegin: PropTypes.func,
     onMomentumScrollEnd: PropTypes.func,
-    contentInset: PropTypes.object
+    contentInset: PropTypes.object,
+    scrollsToTop: PropTypes.bool
   };
 
   state = {
@@ -290,6 +291,7 @@ class ReservationList extends Component {
         onMomentumScrollBegin={this.props.onMomentumScrollBegin}
         onMomentumScrollEnd={this.props.onMomentumScrollEnd}
         contentInset={this.props.contentInset}
+        scrollsToTop={this.props.scrollsToTop}
       />
     );
   }

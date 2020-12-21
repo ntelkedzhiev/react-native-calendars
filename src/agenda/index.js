@@ -39,6 +39,8 @@ export default class AgendaView extends Component {
 
     /** content inset */
     contentInset: PropTypes.object,
+    /** scrollsToTop */
+    scrollsToTop: PropTypes.bool,
 
     /** the list of items that have to be displayed in agenda. If you want to render item as empty date
     the value of date key has to be an empty array []. If there exists no value for date key it is
@@ -337,6 +339,7 @@ export default class AgendaView extends Component {
         ref={(c) => this.list = c}
         theme={this.props.theme}
         contentInset={this.props.contentInset}
+        scrollsToTop={this.props.scrollsToTop}
       />
     );
   }
