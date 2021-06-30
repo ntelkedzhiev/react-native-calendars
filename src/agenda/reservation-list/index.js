@@ -40,6 +40,7 @@ class ReservationList extends Component {
     onMomentumScrollBegin: PropTypes.func,
     onMomentumScrollEnd: PropTypes.func,
     contentInset: PropTypes.object,
+    listContainerStyle: PropTypes.object,
     scrollsToTop: PropTypes.bool
   };
 
@@ -270,7 +271,7 @@ class ReservationList extends Component {
       <FlatList
         ref={c => (this.list = c)}
         style={{ ...this.props.style, opacity }}
-        contentContainerStyle={this.styles.content}
+        contentContainerStyle={{...this.styles.content, ...this.props.listContainerStyle}}
         renderItem={this.renderRow.bind(this)}
         data={this.state.reservations}
         onScroll={this.onScroll.bind(this)}
