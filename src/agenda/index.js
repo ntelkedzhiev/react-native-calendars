@@ -118,6 +118,13 @@ export default class AgendaView extends Component {
     this.viewWidth = windowSize.width;
     this.scrollTimeout = undefined;
     this.headerState = 'idle';
+    this._mainLayoutComplete = false;
+    this._scrollPadLayoutComplete = false;
+    this._scrollPadViewLayoutComplete = false;
+    this._calendarLayoutComplete = false;
+    this._reservationsViewLayoutComplete = false;
+    this._headerAnimatedViewLayoutComplete = false;
+    this._contentAnimatedViewLayoutComplete = false;
 
     this.state = {
       scrollY: new Animated.Value(0),
@@ -146,6 +153,12 @@ export default class AgendaView extends Component {
     this.loadReservations(this.props);
   }
 
+  checkAllLayoutsComplete = () => {
+    if (this._mainLayoutComplete && this._scrollPadLayoutComplete && this._scrollPadViewLayoutComplete && this._calendarLayoutComplete && this._reservationsViewLayoutComplete && this._headerAnimatedViewLayoutComplete && this._contentAnimatedViewLayoutComplete && !this.state.calendarIsReady) {
+      setTimeout(() => this.setState({calendarIsReady: true}), Platform.OS === 'android' ? 250 : 0);
+    }
+  };
+
   componentWillUnmount() {
     this._isMounted = false;
     this.state.scrollY.removeAllListeners();
@@ -170,11 +183,19 @@ export default class AgendaView extends Component {
   };
 
   setScrollPadPosition = (y, animated) => {
+    // Skip scroll pad changes during Android transition to prevent jumping
+    if (Platform.OS === 'android' && this._androidTransitioning) {
+      return;
+    }
+
+    // Disable animation on Android to prevent visual glitches
+    const useAnimation = Platform.OS !== 'android' ? animated : false;
+
     if (this.scrollPad.scrollTo) {
-      this.scrollPad.scrollTo({x: 0, y, animated});
+      this.scrollPad.scrollTo({x: 0, y, animated: useAnimation});
     } else {
       // Support for RN O.61 (Expo 37)
-      this.scrollPad.getNode().scrollTo({x: 0, y, animated});
+      this.scrollPad.getNode().scrollTo({x: 0, y, animated: useAnimation});
     }
   };
 
@@ -182,14 +203,16 @@ export default class AgendaView extends Component {
     // When user touches knob, the actual component that receives touch events is a ScrollView.
     // It needs to be scrolled to the bottom, so that when user moves finger downwards,
     // scroll position actually changes (it would stay at 0, when scrolled to the top).
+    this._scrollPadLayoutComplete = true;
+    this.checkAllLayoutsComplete();
     this.setScrollPadPosition(this.initialScrollPadPosition(), false);
-    // delay rendering calendar in full height because otherwise it still flickers sometimes
-    setTimeout(() => this.setState({calendarIsReady: true}), 0);
   };
 
   onLayout(event) {
     this.viewHeight = event.nativeEvent.layout.height;
     this.viewWidth = event.nativeEvent.layout.width;
+    this._mainLayoutComplete = true;
+    this.checkAllLayoutsComplete();
     // Fix: https://github.com/wix/react-native-calendars/pull/486/files
     this.calendar.scrollToDay(this.state.selectedDay.clone(), this.calendarOffset(), false);
     this.forceUpdate();
@@ -290,10 +313,26 @@ export default class AgendaView extends Component {
   chooseDay(d, optimisticScroll) {
     const day = parseDate(d);
 
-    this.setState({
-      calendarScrollable: false,
-      selectedDay: day.clone(),
-    });
+    if (Platform.OS === 'android') {
+      // On Android, delay the calendarScrollable change to prevent visual glitch
+      this._androidTransitioning = true;  // Flag to prevent jumping during transition
+      this.setState({
+        selectedDay: day.clone(),
+      });
+      setTimeout(() => {
+        this.setState({
+          calendarScrollable: false,
+        });
+        this._androidTransitioning = false;
+        // Trigger the scroll pad position change after state is set
+        this.setScrollPadPosition(this.initialScrollPadPosition(), false);
+      });
+    } else {
+      this.setState({
+        calendarScrollable: false,
+        selectedDay: day.clone(),
+      });
+    }
 
     if (this.props.onCalendarToggled) {
       this.props.onCalendarToggled(false);
@@ -452,11 +491,31 @@ export default class AgendaView extends Component {
         onLayout={this.onLayout}
         style={[this.props.style, {flex: 1, overflow: 'hidden'}]}
       >
-        <View style={this.styles.reservations}>{this.renderReservations()}</View>
-        <Animated.View style={headerStyle}>
-          <Animated.View style={{flex: 1, transform: [{translateY: contentTranslate}]}}>
+        <View
+          style={this.styles.reservations}
+          onLayout={() => {
+            this._reservationsViewLayoutComplete = true;
+            this.checkAllLayoutsComplete();
+          }}
+        >{this.renderReservations()}</View>
+        <Animated.View
+          style={headerStyle}
+          onLayout={() => {
+            this._headerAnimatedViewLayoutComplete = true;
+            this.checkAllLayoutsComplete();
+          }}
+        >
+          <Animated.View
+            style={{flex: 1, transform: [{translateY: contentTranslate}]}}
+            onLayout={() => {
+              this._contentAnimatedViewLayoutComplete = true;
+              this.checkAllLayoutsComplete();
+            }}
+          >
             <CalendarList
               onLayout={() => {
+                this._calendarLayoutComplete = true;
+                this.checkAllLayoutsComplete();
                 this.calendar.scrollToDay(this.state.selectedDay.clone(), this.calendarOffset(), false);
               }}
               calendarWidth={this.viewWidth}
@@ -507,6 +566,10 @@ export default class AgendaView extends Component {
           onScrollBeginDrag={this.onStartDrag}
           onScrollEndDrag={this.onSnapAfterDrag}
           onScroll={Animated.event([{nativeEvent: {contentOffset: {y: this.state.scrollY}}}], {useNativeDriver: true})}
+          onLayout={() => {
+            this._scrollPadViewLayoutComplete = true;
+            this.checkAllLayoutsComplete();
+          }}
         >
           <View
             testID={AGENDA_CALENDAR_KNOB}

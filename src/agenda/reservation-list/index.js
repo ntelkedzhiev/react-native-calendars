@@ -1,5 +1,5 @@
 import React, {Component} from 'react';
-import {FlatList, ActivityIndicator, View} from 'react-native';
+import {FlatList, ActivityIndicator, View, Platform} from 'react-native';
 import PropTypes from 'prop-types';
 import XDate from 'xdate';
 import { parseDate } from "../../interface";
@@ -96,7 +96,7 @@ class ReservationList extends Component {
         scrollPosition += this.heights[i] || 0;
       }
       this.scrollOver = false;
-      this.list.scrollToOffset({offset: scrollPosition, animated: true});
+      this.list.scrollToOffset({offset: scrollPosition, animated: Platform.OS !== 'android'});
     }
     this.selectedDay = props.selectedDay;
     this.updateDataSource(reservations.reservations);
